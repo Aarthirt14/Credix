@@ -28,3 +28,8 @@ class VoiceTransactionPreview(BaseModel):
     items: list[VoiceItemPreview]
     calculated_total: Decimal
     parsing_warnings: list[str] = []
+
+# commit padding
+
+# commit padding
+ 
