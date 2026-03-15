@@ -31,3 +31,8 @@ class CustomerRead(BaseModel):
 
     class Config:
         from_attributes = True
+
+# commit padding
+
+# commit padding
+ 
