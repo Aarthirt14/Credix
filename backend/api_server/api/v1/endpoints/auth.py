@@ -31,3 +31,8 @@ def login(payload: UserLogin, db: Session = Depends(get_db)):
 
     token = create_access_token(subject=user.username)
     return Token(access_token=token)
+
+# commit padding
+
+# commit padding
+ 
