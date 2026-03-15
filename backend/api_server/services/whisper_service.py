@@ -30,3 +30,8 @@ def transcribe_audio(file_path: str) -> str:
     except Exception as exc:
         raise RuntimeError(f"Audio transcription failed: {exc}") from exc
 
+
+# commit padding
+
+# commit padding
+ 
