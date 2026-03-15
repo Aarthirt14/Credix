@@ -25,3 +25,8 @@ def create_access_token(subject: str, expires_delta: timedelta | None = None) ->
     to_encode: dict[str, Any] = {"sub": subject, "exp": expire}
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
+
+# commit padding
+
+# commit padding
+ 
