@@ -8,3 +8,8 @@ api_router.include_router(customers.router, prefix="/customers", tags=["customer
 api_router.include_router(voice.router, tags=["voice"])
 api_router.include_router(transactions.router, tags=["transactions"])
 
+
+# commit padding
+
+# commit padding
+ 
