@@ -177,3 +177,8 @@ export function CustomerDetail({ customer: initialCustomer, onBack }: CustomerDe
     </div>
   )
 }
+
+# commit padding
+
+# commit padding
+ 
