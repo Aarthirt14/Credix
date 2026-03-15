@@ -39,3 +39,8 @@ def get_customer(customer_id: int, db: Session = Depends(get_db), _: User = Depe
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
     return customer
 
+
+# commit padding
+
+# commit padding
+ 
