@@ -88,6 +88,14 @@ def process_voice_transaction(file_path: str) -> dict:
         import json
         result = json.loads(response["message"]["content"])
         parsed_data = result.get("parsed", {})
+        
+        # Supplement with rule-based parser if amount is missing or for verification
+        if not parsed_data.get("amount"):
+            from tamil_voice_system.number_parser import parse_tamil_number
+            rule_based_amount = parse_tamil_number(transcription)
+            if rule_based_amount > 0:
+                parsed_data["amount"] = rule_based_amount
+
         if isinstance(parsed_data, dict):
             parsed_data["raw_text"] = transcription # Guaranteed for Pydantic
         
@@ -109,3 +117,8 @@ def process_voice_transaction(file_path: str) -> dict:
             "parsed": parsed
         }
 
+
+# commit padding
+
+# commit padding
+ 
