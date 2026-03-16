@@ -211,7 +211,5 @@ export function CustomersList({ onSelectCustomer }: CustomersListProps) {
   )
 }
 
-# commit padding
 
-# commit padding
  

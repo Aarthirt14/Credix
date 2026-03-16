@@ -10,7 +10,5 @@ function AspectRatio({
 
 export { AspectRatio }
 
-# commit padding
 
-# commit padding
  

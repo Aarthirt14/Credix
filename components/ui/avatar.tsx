@@ -52,7 +52,5 @@ function AvatarFallback({
 
 export { Avatar, AvatarImage, AvatarFallback }
 
-# commit padding
 
-# commit padding
  

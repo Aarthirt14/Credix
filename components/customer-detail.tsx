@@ -178,7 +178,5 @@ export function CustomerDetail({ customer: initialCustomer, onBack }: CustomerDe
   )
 }
 
-# commit padding
 
-# commit padding
  

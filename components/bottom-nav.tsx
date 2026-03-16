@@ -51,7 +51,5 @@ export function BottomNav({ activePage, onNavigate }: BottomNavProps) {
   )
 }
 
-# commit padding
 
-# commit padding
  

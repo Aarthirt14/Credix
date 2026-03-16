@@ -65,7 +65,5 @@ function AccordionContent({
 
 export { Accordion, AccordionItem, AccordionTrigger, AccordionContent }
 
-# commit padding
 
-# commit padding
  
