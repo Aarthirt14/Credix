@@ -20,8 +20,8 @@ Return JSON only with this exact schema:
 }
 
 Rules:
-- Convert Tamil number words to digits.
-- If text contains ரூபாய் or similar, map to amount.
+- Convert Tamil number words to digits (including Romanized forms like irubathu=20, aimpatu=50).
+- If text contains ரூபாய் or rupees/roobai, map to amount.
 - கடன் => loan
 - கொடுத்தேன் => paid
 - வாங்கினார் => purchase
@@ -124,11 +124,23 @@ def _infer_amount(text: str, current_amount: int | None) -> int | None:
     if isinstance(current_amount, int) and current_amount > 0:
         return current_amount
 
+    # First, try to find English numerals
     match = re.search(r"(\d+)\s*(?:ரூபாய்|ருபாய்|rupees|rs)?", text, flags=re.IGNORECASE)
-    if not match:
-        return None
-    value = int(match.group(1))
-    return value if value > 0 else None
+    if match:
+        value = int(match.group(1))
+        if value > 0:
+            return value
+
+    # Second, try to parse Tamil number words
+    from tamil_voice_system.number_parser import parse_tamil_number
+    try:
+        tamil_amount = parse_tamil_number(text)
+        if tamil_amount > 0:
+            return tamil_amount
+    except Exception:
+        pass
+
+    return None
 
 
 def _to_int(value: object) -> int | None:
@@ -190,7 +202,5 @@ def parse_transaction(text: str) -> dict:
     return payload
 
 
-# commit padding
 
-# commit padding
  
