@@ -40,7 +40,5 @@ def get_customer(customer_id: int, db: Session = Depends(get_db), _: User = Depe
     return customer
 
 
-# commit padding
 
-# commit padding
  
