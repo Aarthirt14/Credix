@@ -59,8 +59,4 @@ export default function RootLayout({
     </html>
   )
 }
-
-# commit padding
-
-# commit padding
  

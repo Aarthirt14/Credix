@@ -62,8 +62,4 @@ export default function Home() {
     </LocaleProvider>
   )
 }
-
-# commit padding
-
-# commit padding
  
