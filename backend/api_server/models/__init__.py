@@ -5,7 +5,5 @@ from api_server.models.user import User
 __all__ = ["User", "Customer", "Transaction", "TransactionItem"]
 
 
-# commit padding
 
-# commit padding
  

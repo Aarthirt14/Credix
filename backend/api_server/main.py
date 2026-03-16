@@ -61,7 +61,5 @@ async def add_rate_limit_headers(request: Request, call_next):
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
-# commit padding
 
-# commit padding
  

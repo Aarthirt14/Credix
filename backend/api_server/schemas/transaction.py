@@ -27,7 +27,5 @@ class ConfirmTransactionResponse(BaseModel):
     updated_total_credit: Decimal
     created_at: datetime
 
-# commit padding
 
-# commit padding
  

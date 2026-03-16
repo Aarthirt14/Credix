@@ -36,7 +36,5 @@ class TransactionItem(Base):
     transaction = relationship("Transaction", back_populates="items")
 
 
-# commit padding
 
-# commit padding
  

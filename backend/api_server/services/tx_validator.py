@@ -21,7 +21,5 @@ def validate_transaction(data: dict) -> bool:
 
     return amount_value > 0
 
-# commit padding
 
-# commit padding
  

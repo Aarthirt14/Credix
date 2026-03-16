@@ -17,7 +17,5 @@ def get_db():
         db.close()
 
 
-# commit padding
 
-# commit padding
  

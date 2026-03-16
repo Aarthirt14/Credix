@@ -19,7 +19,5 @@ class Customer(Base):
     transactions = relationship("Transaction", back_populates="customer", cascade="all, delete-orphan")
 
 
-# commit padding
 
-# commit padding
  

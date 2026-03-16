@@ -13,7 +13,5 @@ with wave.open('backend/test-tone.wav', 'wb') as w:
         w.writeframes(struct.pack('<h', value))
 print('created backend/test-tone.wav')
 
-# commit padding
 
-# commit padding
  

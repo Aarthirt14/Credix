@@ -46,7 +46,5 @@ try:
 except Exception as e:
     print("Response Text:", response.text)
 
-# commit padding
 
-# commit padding
  

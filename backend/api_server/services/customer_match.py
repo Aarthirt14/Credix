@@ -26,7 +26,5 @@ def match_customer(name: str, customers: list) -> str:
     best_match, score, _ = result
     return best_match if score >= 60 else ""
 
-# commit padding
 
-# commit padding
  

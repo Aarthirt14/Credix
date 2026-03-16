@@ -31,7 +31,5 @@ def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_
     return user
 
 
-# commit padding
 
-# commit padding
  

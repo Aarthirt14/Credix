@@ -39,7 +39,5 @@ if __name__ == "__main__":
     test_specific_parsing("Ravi, I receive 4 kg, அம்பது ரூபாய்")
 
 
-# commit padding
 
-# commit padding
  

@@ -29,7 +29,5 @@ class VoiceTransactionPreview(BaseModel):
     calculated_total: Decimal
     parsing_warnings: list[str] = []
 
-# commit padding
 
-# commit padding
  
