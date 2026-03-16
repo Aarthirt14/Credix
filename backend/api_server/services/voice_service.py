@@ -118,7 +118,5 @@ def process_voice_transaction(file_path: str) -> dict:
         }
 
 
-# commit padding
 
-# commit padding
  
