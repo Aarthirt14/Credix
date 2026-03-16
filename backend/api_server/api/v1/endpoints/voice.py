@@ -94,7 +94,5 @@ def voice_transaction_preview(
             os.remove(temp_path)
 
 
-# commit padding
 
-# commit padding
  
