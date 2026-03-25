@@ -340,3 +340,4 @@ This project is licensed under the MIT License - see LICENSE file for details.
 **Made with ❤️ for the Tamil business community**
 
 Happy credit tracking! 🎉
+currently working on voive to text  parsing
