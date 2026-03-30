@@ -32,6 +32,18 @@ interface VoicePreviewItem {
 
 interface VoicePreviewResponse {
   transcription: string
+  normalized_text: string
+  parsed?: {
+    name?: string | null
+    item?: string | null
+    qty?: number | null
+    amount?: number | null
+    type?: string | null
+    raw_text?: string
+  }
+  matched_customer_id: number | null
+  matched_customer_name: string | null
+  is_valid: boolean
   items: VoicePreviewItem[]
   calculated_total: number
   parsing_warnings: string[]
@@ -164,10 +176,12 @@ async function authorizedFetch(path: string, init?: RequestInit): Promise<Respon
   return response
 }
 
-export async function previewVoiceTransaction(customerId: number, audioBlob: Blob): Promise<VoicePreviewResponse> {
+export async function previewVoiceTransaction(audioBlob: Blob, customerId?: number): Promise<VoicePreviewResponse> {
   const formData = new FormData()
   const contentType = audioBlob.type || "audio/webm"
-  formData.append("customer_id", String(customerId))
+  if (typeof customerId === "number") {
+    formData.append("customer_id", String(customerId))
+  }
   formData.append("audio", new File([audioBlob], audioFileNameForType(contentType), { type: contentType }))
 
   const response = await authorizedFetch("/voice-transaction", {
@@ -183,13 +197,27 @@ export async function previewVoiceTransaction(customerId: number, audioBlob: Blo
   return response.json() as Promise<VoicePreviewResponse>
 }
 
-export async function confirmCreditTransaction(customerId: number, items: VoicePreviewItem[]): Promise<void> {
+export async function checkBackendHealth(): Promise<boolean> {
+  const backendUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api/v1"
+  const healthUrl = backendUrl.includes("/api/v1")
+    ? backendUrl.replace(/\/api\/v1\/?$/, "/health")
+    : `${backendUrl.replace(/\/$/, "")}/health`
+
+  const response = await apiFetch(healthUrl, { method: "GET" })
+  return response.ok
+}
+
+export async function confirmCreditTransaction(
+  customerId: number,
+  items: VoicePreviewItem[],
+  transactionType: "credit" | "payment" = "credit"
+): Promise<void> {
   const response = await authorizedFetch("/confirm-transaction", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ customer_id: customerId, items }),
+    body: JSON.stringify({ customer_id: customerId, items, transaction_type: transactionType }),
   })
 
   if (!response.ok) {
