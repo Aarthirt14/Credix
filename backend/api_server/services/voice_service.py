@@ -1,12 +1,88 @@
 from __future__ import annotations
 
-import os
+import json
+import re
 from functools import lru_cache
 from faster_whisper import WhisperModel
 
 from api_server.core.config import get_settings
-from api_server.services.text_normalizer import normalize_text
-from api_server.services.llm_parser import parse_transaction
+
+
+TYPE_ALIASES = {
+    "loan": "loan",
+    "credit": "loan",
+    "paid": "paid",
+    "payment": "paid",
+    "purchase": "purchase",
+    "expense": "expense",
+}
+
+
+def _extract_first_json(raw: str) -> dict | None:
+    if not raw:
+        return None
+
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        pass
+
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+
+    try:
+        parsed = json.loads(raw[start : end + 1])
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        return None
+
+
+def _fallback_amount_from_text(text: str) -> int:
+    digit_match = re.search(r"\d+", text)
+    if digit_match:
+        return int(digit_match.group(0))
+
+    from tamil_voice_system.number_parser import parse_tamil_number
+
+    return parse_tamil_number(text)
+
+
+def _normalize_type(value: object) -> str:
+    raw = str(value or "").strip().lower()
+    return TYPE_ALIASES.get(raw, "expense")
+
+
+def _normalize_parsed_payload(parsed_data: dict | None, transcription: str) -> dict:
+    parsed_data = parsed_data or {}
+    normalized: dict = {
+        "name": parsed_data.get("name") or None,
+        "item": parsed_data.get("item") or None,
+        "qty": parsed_data.get("qty") or 1,
+        "amount": parsed_data.get("amount"),
+        "type": _normalize_type(parsed_data.get("type")),
+        "raw_text": transcription,
+    }
+
+    try:
+        normalized["qty"] = int(normalized["qty"] or 1)
+    except (TypeError, ValueError):
+        normalized["qty"] = 1
+
+    if normalized["qty"] <= 0:
+        normalized["qty"] = 1
+
+    try:
+        normalized["amount"] = int(normalized["amount"])
+    except (TypeError, ValueError):
+        normalized["amount"] = _fallback_amount_from_text(transcription)
+
+    if normalized["amount"] <= 0:
+        normalized["amount"] = _fallback_amount_from_text(transcription)
+
+    return normalized
 
 
 @lru_cache(maxsize=1)
@@ -78,43 +154,34 @@ def process_voice_transaction(file_path: str) -> dict:
     print("Pipeline: Starting single-shot Ollama request (Normalize + Parse)...")
     try:
         import ollama
+
         settings = get_settings()
         response = ollama.chat(
             model=settings.OLLAMA_MODEL,
             messages=[{"role": "user", "content": combined_prompt}],
             options={"temperature": 0},
-            format="json"
+            format="json",
         )
-        import json
-        result = json.loads(response["message"]["content"])
-        parsed_data = result.get("parsed", {})
-        
-        # Supplement with rule-based parser if amount is missing or for verification
-        if not parsed_data.get("amount"):
-            from tamil_voice_system.number_parser import parse_tamil_number
-            rule_based_amount = parse_tamil_number(transcription)
-            if rule_based_amount > 0:
-                parsed_data["amount"] = rule_based_amount
+        raw_content = response["message"]["content"]
+        result = _extract_first_json(raw_content) or {}
+        parsed_payload = _normalize_parsed_payload(result.get("parsed"), transcription)
 
-        if isinstance(parsed_data, dict):
-            parsed_data["raw_text"] = transcription # Guaranteed for Pydantic
-        
         return {
             "transcription": transcription,
-            "normalized_text": result.get("normalized_text", transcription),
-            "parsed": parsed_data
+            "normalized_text": str(result.get("normalized_text") or transcription),
+            "parsed": parsed_payload,
         }
-    except Exception as e:
+    except Exception:
         # Fallback to individual services if combined fails
         from api_server.services.text_normalizer import normalize_text
         from api_server.services.llm_parser import parse_transaction
-        
+
         normalized = normalize_text(transcription)
-        parsed = parse_transaction(normalized)
+        parsed = _normalize_parsed_payload(parse_transaction(normalized), transcription)
         return {
             "transcription": transcription,
             "normalized_text": normalized,
-            "parsed": parsed
+            "parsed": parsed,
         }
 
 
