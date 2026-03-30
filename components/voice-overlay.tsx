@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
-import { Mic, X, Check, Pencil } from "lucide-react"
+import { Mic, X, Check, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useLocale } from "@/lib/locale-context"
 import { useAppState, type Customer } from "@/lib/app-state"
@@ -21,6 +21,8 @@ interface ParsedCommand {
   type: "credit" | "payment"
   matchedCustomer: Customer | null
   items: { name: string; qty: number; price: number }[]
+  normalizedText: string
+  parsingWarnings: string[]
 }
 
 const TAMIL_TO_LATIN: Record<string, string> = {
@@ -57,10 +59,17 @@ export function VoiceOverlay({ open, onClose }: VoiceOverlayProps) {
   const [error, setError] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
+  const [recordingSeconds, setRecordingSeconds] = useState(0)
+  const [audioLevel, setAudioLevel] = useState(0)
+  const [selectedCustomerId, setSelectedCustomerId] = useState("")
   const [backendCustomerMap, setBackendCustomerMap] = useState<Record<string, number>>({})
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const analyserRef = useRef<AnalyserNode | null>(null)
+  const animationFrameRef = useRef<number | null>(null)
+  const dataArrayRef = useRef<Uint8Array<ArrayBuffer> | null>(null)
 
   const getPreferredMimeType = useCallback((): string => {
     const candidates = [
@@ -80,6 +89,58 @@ export function VoiceOverlay({ open, onClose }: VoiceOverlayProps) {
     setParsed(null)
     setError("")
     setIsRecording(false)
+    setRecordingSeconds(0)
+    setAudioLevel(0)
+    setWaveAmplitudes(Array(20).fill(0.3))
+    setSelectedCustomerId("")
+  }, [])
+
+  const stopAudioMonitor = useCallback(() => {
+    if (animationFrameRef.current !== null) {
+      cancelAnimationFrame(animationFrameRef.current)
+      animationFrameRef.current = null
+    }
+    analyserRef.current = null
+    dataArrayRef.current = null
+    if (audioContextRef.current) {
+      void audioContextRef.current.close()
+      audioContextRef.current = null
+    }
+    setAudioLevel(0)
+  }, [])
+
+  const startAudioMonitor = useCallback((stream: MediaStream) => {
+    const AudioCtor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!AudioCtor) return
+
+    const context = new AudioCtor()
+    const source = context.createMediaStreamSource(stream)
+    const analyser = context.createAnalyser()
+    analyser.fftSize = 64
+    analyser.smoothingTimeConstant = 0.85
+    source.connect(analyser)
+
+    const dataArray = new Uint8Array(new ArrayBuffer(analyser.frequencyBinCount))
+    audioContextRef.current = context
+    analyserRef.current = analyser
+    dataArrayRef.current = dataArray
+
+    const update = () => {
+      const localAnalyser = analyserRef.current
+      const localData = dataArrayRef.current
+      if (!localAnalyser || !localData) return
+
+      localAnalyser.getByteFrequencyData(localData)
+      const values = Array.from(localData.slice(0, 20))
+      const normalizedBars = values.map((value) => Math.max(0.12, value / 255))
+      const avg = normalizedBars.reduce((sum, value) => sum + value, 0) / normalizedBars.length
+
+      setWaveAmplitudes(normalizedBars)
+      setAudioLevel(avg)
+      animationFrameRef.current = requestAnimationFrame(update)
+    }
+
+    animationFrameRef.current = requestAnimationFrame(update)
   }, [])
 
   const inferCustomerFromText = useCallback(
@@ -151,21 +212,67 @@ export function VoiceOverlay({ open, onClose }: VoiceOverlayProps) {
 
       try {
         const customerMap = await ensureCustomerMap()
-        const fallbackCustomerId = customerMap[customers[0].id]
-        if (!fallbackCustomerId) {
-          throw new Error("No backend customers available")
+        const selectedBackendCustomerId = selectedCustomerId ? customerMap[selectedCustomerId] : undefined
+        const preview = await previewVoiceTransaction(audioBlob, selectedBackendCustomerId)
+
+        const backendToLocal = new Map<number, string>(
+          Object.entries(customerMap).map(([localId, backendId]) => [backendId, localId])
+        )
+
+        let matched: Customer | null = selectedCustomerId
+          ? customers.find((customer) => customer.id === selectedCustomerId) ?? null
+          : null
+
+        if (!matched && typeof preview.matched_customer_id === "number") {
+          const localCustomerId = backendToLocal.get(preview.matched_customer_id)
+          if (localCustomerId) {
+            matched = customers.find((customer) => customer.id === localCustomerId) ?? null
+          }
         }
-        const preview = await previewVoiceTransaction(fallbackCustomerId, audioBlob)
-        const matchText = `${preview.transcription} ${preview.items.map((item) => item.name).join(" ")}`
-        const matched = inferCustomerFromText(matchText)
+
+        if (!matched && preview.matched_customer_name) {
+          const loweredName = preview.matched_customer_name.toLowerCase()
+          matched = customers.find((customer) => customer.name.toLowerCase() === loweredName) ?? null
+        }
+
+        if (!matched) {
+          const matchText = `${preview.transcription} ${preview.items.map((item) => item.name).join(" ")}`
+          matched = inferCustomerFromText(matchText)
+        }
+
+        if (matched) {
+          setSelectedCustomerId(matched.id)
+        }
+
+        const parsedType = (preview.parsed?.type ?? "").toLowerCase()
+        const txType: "credit" | "payment" = parsedType === "paid" || parsedType === "payment"
+          ? "payment"
+          : "credit"
+
+        const totalFromItems = preview.items.reduce((sum, item) => {
+          const qty = Number(item.qty) || 0
+          const price = Number(item.price) || 0
+          return sum + qty * price
+        }, 0)
+
+        const calculatedAmount =
+          Number(preview.calculated_total) ||
+          totalFromItems ||
+          Number(preview.parsed?.amount || 0)
+
+        const normalizedItem = preview.items.length
+          ? preview.items
+          : [{ name: preview.parsed?.item || "Credit Entry", qty: 1, price: calculatedAmount }]
 
         setTranscription(preview.transcription)
         setParsed({
           customerName: matched?.name || "Unknown",
-          amount: Number(preview.calculated_total),
-          type: "credit",
+          amount: calculatedAmount,
+          type: txType,
           matchedCustomer: matched,
-          items: preview.items,
+          items: normalizedItem,
+          normalizedText: preview.normalized_text,
+          parsingWarnings: preview.parsing_warnings ?? [],
         })
         setState("preview")
       } catch (processingError) {
@@ -173,7 +280,7 @@ export function VoiceOverlay({ open, onClose }: VoiceOverlayProps) {
         setState("listening")
       }
     },
-    [customers, ensureCustomerMap, inferCustomerFromText]
+    [customers, ensureCustomerMap, inferCustomerFromText, selectedCustomerId]
   )
 
   const stopRecording = useCallback(() => {
@@ -185,12 +292,14 @@ export function VoiceOverlay({ open, onClose }: VoiceOverlayProps) {
       }
       recorder.stop()
     }
+    stopAudioMonitor()
   }, [])
 
   const startRecording = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       mediaStreamRef.current = stream
+      startAudioMonitor(stream)
       const preferredMimeType = getPreferredMimeType()
       const recorder = preferredMimeType
         ? new MediaRecorder(stream, { mimeType: preferredMimeType })
@@ -206,6 +315,7 @@ export function VoiceOverlay({ open, onClose }: VoiceOverlayProps) {
       recorder.onstop = async () => {
         setIsRecording(false)
         mediaRecorderRef.current = null
+        stopAudioMonitor()
         mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
         mediaStreamRef.current = null
 
@@ -224,22 +334,34 @@ export function VoiceOverlay({ open, onClose }: VoiceOverlayProps) {
     } catch {
       setError("Microphone permission denied")
     }
-  }, [getPreferredMimeType, processRecording])
+  }, [getPreferredMimeType, processRecording, startAudioMonitor, stopAudioMonitor])
 
-  // Animate waveform during listening
   useEffect(() => {
-    if (!open || state !== "listening") return
+    if (!isRecording) {
+      setRecordingSeconds(0)
+      return
+    }
+    const timer = window.setInterval(() => {
+      setRecordingSeconds((seconds) => seconds + 1)
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [isRecording])
+
+  // Fallback waveform animation while awaiting analyser updates
+  useEffect(() => {
+    if (!open || state !== "listening" || isRecording) return
     const interval = setInterval(() => {
       setWaveAmplitudes(
         Array.from({ length: 20 }, () => 0.2 + Math.random() * 0.8)
       )
     }, 120)
     return () => clearInterval(interval)
-  }, [open, state])
+  }, [open, state, isRecording])
 
   useEffect(() => {
     if (!open) {
       stopRecording()
+      stopAudioMonitor()
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
       mediaStreamRef.current = null
       reset()
@@ -248,23 +370,35 @@ export function VoiceOverlay({ open, onClose }: VoiceOverlayProps) {
     void startRecording()
     return () => {
       stopRecording()
+      stopAudioMonitor()
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
       mediaStreamRef.current = null
     }
-  }, [open, reset, startRecording, stopRecording])
+  }, [open, reset, startRecording, stopRecording, stopAudioMonitor])
+
+  const selectedCustomer = selectedCustomerId
+    ? customers.find((customer) => customer.id === selectedCustomerId) ?? null
+    : parsed?.matchedCustomer ?? null
 
   async function handleConfirm() {
-    if (!parsed?.matchedCustomer || !parsed.items.length) return
+    if (!parsed || !parsed.items.length) return
+
+    const localCustomer = selectedCustomer
+    if (!localCustomer) {
+      setError("Select a customer before confirming")
+      return
+    }
+
     setIsSubmitting(true)
     setError("")
     try {
       const customerMap = await ensureCustomerMap()
-      const backendCustomerId = customerMap[parsed.matchedCustomer.id]
+      const backendCustomerId = customerMap[localCustomer.id]
       if (!backendCustomerId) {
         throw new Error("Matched customer not found in backend")
       }
-      await confirmCreditTransaction(backendCustomerId, parsed.items)
-      addTransaction(parsed.matchedCustomer.id, "credit", parsed.amount)
+      await confirmCreditTransaction(backendCustomerId, parsed.items, parsed.type)
+      addTransaction(localCustomer.id, parsed.type, parsed.amount)
       setState("success")
       setTimeout(() => {
         onClose()
@@ -301,7 +435,12 @@ export function VoiceOverlay({ open, onClose }: VoiceOverlayProps) {
                 <div className="absolute inset-0 animate-ping rounded-full bg-[var(--primary)] opacity-20" />
               </div>
 
-              <p className="text-lg font-semibold text-foreground">{t("listening")}</p>
+              <div className="space-y-1 text-center">
+                <p className="text-lg font-semibold text-foreground">{t("listening")}</p>
+                <p className="text-xs text-muted-foreground">
+                  {recordingSeconds}s | level {Math.round(audioLevel * 100)}%
+                </p>
+              </div>
 
               {/* Transcription */}
               <div className="min-h-[48px] w-full text-center">
@@ -331,7 +470,8 @@ export function VoiceOverlay({ open, onClose }: VoiceOverlayProps) {
 
           {state === "processing" && (
             <div className="flex flex-col items-center gap-4 py-8">
-              <p className="text-base font-semibold text-foreground">Processing audio...</p>
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--primary)]/20 border-t-[var(--primary)]" />
+              <p className="text-base font-semibold text-foreground">Processing Tamil audio...</p>
             </div>
           )}
 
@@ -343,9 +483,31 @@ export function VoiceOverlay({ open, onClose }: VoiceOverlayProps) {
 
               {/* Parsed data card */}
               <div className="rounded-xl border border-border bg-muted/50 p-4 space-y-3">
+                {parsed.normalizedText && parsed.normalizedText !== transcription && (
+                  <div className="rounded-lg bg-card p-2 text-xs text-muted-foreground">
+                    {parsed.normalizedText}
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <span className="text-sm text-muted-foreground">{t("customer")}</span>
+                  <select
+                    value={selectedCustomerId}
+                    onChange={(event) => setSelectedCustomerId(event.target.value)}
+                    className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground"
+                  >
+                    <option value="">Select customer</option>
+                    {customers.map((customer) => (
+                      <option key={customer.id} value={customer.id}>
+                        {customer.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">{t("customer")}</span>
-                  <span className="text-base font-semibold text-foreground">{parsed.customerName}</span>
+                  <span className="text-base font-semibold text-foreground">{selectedCustomer?.name || parsed.customerName}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">{t("amount")}</span>
@@ -366,27 +528,30 @@ export function VoiceOverlay({ open, onClose }: VoiceOverlayProps) {
                     {t(parsed.type)}
                   </span>
                 </div>
+
+                {parsed.parsingWarnings.length > 0 && (
+                  <div className="rounded-lg border border-[var(--destructive)]/20 bg-[var(--destructive)]/5 p-2 text-xs text-[var(--destructive)]">
+                    {parsed.parsingWarnings.join(". ")}
+                  </div>
+                )}
               </div>
 
               {/* Action buttons */}
               <div className="flex gap-3">
                 <Button
                   variant="outline"
-                  onClick={onClose}
+                  onClick={() => {
+                    reset()
+                    void startRecording()
+                  }}
                   className="h-12 flex-1 rounded-xl text-sm"
                 >
-                  {t("cancel")}
-                </Button>
-                <Button
-                  variant="outline"
-                  className="h-12 rounded-xl px-4 text-sm"
-                >
-                  <Pencil className="mr-1 h-4 w-4" />
-                  {t("edit")}
+                  <RotateCcw className="mr-1 h-4 w-4" />
+                  {t("retry")}
                 </Button>
                 <Button
                   onClick={handleConfirm}
-                  disabled={!parsed.matchedCustomer || isSubmitting}
+                  disabled={!selectedCustomer || isSubmitting || parsed.amount <= 0}
                   className="h-12 flex-1 rounded-xl bg-[var(--primary)] text-sm font-semibold text-[var(--primary-foreground)] hover:bg-[var(--primary)]/90"
                 >
                   <Check className="mr-1 h-4 w-4" />
@@ -397,7 +562,20 @@ export function VoiceOverlay({ open, onClose }: VoiceOverlayProps) {
           )}
 
           {error && (
-            <p className="mt-4 text-center text-sm text-[var(--destructive)]">{error}</p>
+            <div className="mt-4 space-y-2 text-center">
+              <p className="text-sm text-[var(--destructive)]">{error}</p>
+              <Button
+                variant="outline"
+                className="h-10 rounded-lg"
+                onClick={() => {
+                  setError("")
+                  reset()
+                  void startRecording()
+                }}
+              >
+                {t("retry")}
+              </Button>
+            </div>
           )}
 
           {state === "success" && (
