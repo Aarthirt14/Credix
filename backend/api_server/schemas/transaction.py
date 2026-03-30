@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -19,6 +20,7 @@ class ConfirmTransactionRequest(BaseModel):
     customer_id: int | None = None
     items: list[ItemInput] = Field(default_factory=list)
     voice_data: dict | None = None
+    transaction_type: Literal["credit", "payment"] = "credit"
 
 
 class ConfirmTransactionResponse(BaseModel):
