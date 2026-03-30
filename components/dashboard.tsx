@@ -1,11 +1,13 @@
 "use client"
 
-import { useState } from "react"
-import { Mic, UserPlus, AlertCircle, Bell, Users, CreditCard, ArrowRightLeft, CalendarDays } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Mic, UserPlus, AlertCircle, Bell, Users, CreditCard, ArrowRightLeft, CalendarDays, Wifi, WifiOff } from "lucide-react"
 import { useLocale } from "@/lib/locale-context"
 import { useAppState } from "@/lib/app-state"
 import { VoiceOverlay } from "@/components/voice-overlay"
 import type { Page } from "@/components/bottom-nav"
+import { checkBackendHealth } from "@/lib/api"
+import { cn } from "@/lib/utils"
 
 interface DashboardProps {
   onNavigate: (page: Page) => void
@@ -15,6 +17,32 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const { t } = useLocale()
   const { shopName, customers } = useAppState()
   const [voiceOpen, setVoiceOpen] = useState(false)
+  const [backendOnline, setBackendOnline] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    const checkStatus = async () => {
+      try {
+        const ok = await checkBackendHealth()
+        if (!cancelled) {
+          setBackendOnline(ok)
+        }
+      } catch {
+        if (!cancelled) {
+          setBackendOnline(false)
+        }
+      }
+    }
+
+    void checkStatus()
+    const interval = window.setInterval(checkStatus, 15000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [])
 
   const totalCustomers = customers.length
   const customersWithDues = customers.filter((c) => c.pending > 0).length
@@ -74,9 +102,22 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         <h1 className="text-xl font-bold text-foreground">
           {t("greeting")}, {shopName}
         </h1>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <CalendarDays className="h-4 w-4" />
-          <span>{today}</span>
+        <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <CalendarDays className="h-4 w-4" />
+            <span>{today}</span>
+          </div>
+          <div
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
+              backendOnline === false
+                ? "border-[var(--destructive)]/30 bg-[var(--destructive)]/10 text-[var(--destructive)]"
+                : "border-[var(--success)]/30 bg-[var(--success)]/10 text-[var(--success)]"
+            )}
+          >
+            {backendOnline === false ? <WifiOff className="h-3.5 w-3.5" /> : <Wifi className="h-3.5 w-3.5" />}
+            <span>{backendOnline === false ? "Voice backend offline" : "Voice backend ready"}</span>
+          </div>
         </div>
       </div>
 
@@ -100,7 +141,13 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       {/* Main Mic Button */}
       <div className="flex flex-col items-center gap-3 py-4">
         <button
-          onClick={() => setVoiceOpen(true)}
+          onClick={() => {
+            if (backendOnline === false) {
+              return
+            }
+            setVoiceOpen(true)
+          }}
+          disabled={backendOnline === false}
           className="group relative flex h-[120px] w-[120px] items-center justify-center rounded-full bg-[var(--primary)] shadow-lg shadow-[var(--primary)]/30 transition-all hover:shadow-xl hover:shadow-[var(--primary)]/40 active:scale-95"
           aria-label={t("startSpeaking")}
         >
@@ -110,6 +157,9 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           <div className="absolute -inset-2 animate-pulse rounded-full border-2 border-[var(--primary)]/20" />
         </button>
         <span className="text-base font-semibold text-foreground">{t("startSpeaking")}</span>
+        <p className="text-center text-xs text-muted-foreground">
+          Speak in Tamil naturally, for example: "ரவி இருபது ரூபாய்".
+        </p>
       </div>
 
       {/* Quick Actions */}
