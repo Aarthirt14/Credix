@@ -78,6 +78,14 @@ def voice_transaction_preview(
                 )
             ]
 
+        warnings: list[str] = []
+        if not tx_valid:
+            warnings.append("Unable to fully validate parsed transaction")
+        if matched_customer is None and selected_customer is None:
+            warnings.append("Customer match confidence is low")
+        if not amount_value or amount_value <= 0:
+            warnings.append("Amount could not be confidently parsed")
+
         return VoiceTransactionPreview(
             transcription=transcription,
             normalized_text=normalized_text,
@@ -87,7 +95,7 @@ def voice_transaction_preview(
             is_valid=tx_valid,
             items=items,
             calculated_total=total,
-            parsing_warnings=[] if tx_valid else ["Unable to fully validate parsed transaction"],
+            parsing_warnings=warnings,
         )
     finally:
         if os.path.exists(temp_path):
