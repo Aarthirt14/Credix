@@ -26,6 +26,7 @@ def confirm_transaction(
     tx_qty = None
     tx_type = None
     tx_raw_text = None
+    transaction_direction = payload.transaction_type
 
     if payload.voice_data:
         if not validate_transaction(payload.voice_data):
@@ -52,7 +53,7 @@ def confirm_transaction(
         total_amount = Decimal(str(amount))
         tx_item_name = str(payload.voice_data.get("item") or "Credit Entry")
         tx_qty = Decimal(str(payload.voice_data.get("qty") or 1))
-        tx_type = str(payload.voice_data.get("type") or "expense")
+        tx_type = str(payload.voice_data.get("type") or ("loan" if transaction_direction == "credit" else "paid"))
         tx_raw_text = str(payload.voice_data.get("raw_text") or "")
     else:
         if payload.customer_id is None:
@@ -70,7 +71,7 @@ def confirm_transaction(
         first_item = payload.items[0]
         tx_item_name = first_item.name
         tx_qty = first_item.qty
-        tx_type = "expense"
+        tx_type = "loan" if transaction_direction == "credit" else "paid"
         tx_raw_text = ""
 
     if total_amount <= 0:
@@ -110,7 +111,10 @@ def confirm_transaction(
                         )
                     )
 
-            customer.total_credit = Decimal(customer.total_credit) + total_amount
+            if transaction_direction == "payment":
+                customer.total_credit = max(Decimal("0"), Decimal(customer.total_credit) - total_amount)
+            else:
+                customer.total_credit = Decimal(customer.total_credit) + total_amount
             db.add(customer)
 
         db.commit()
